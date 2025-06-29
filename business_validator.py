@@ -17,8 +17,14 @@ import logging
 # Load environment variables
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("autogen").setLevel(logging.DEBUG)
+# Configure logging - only show INFO and above, suppress autogen DEBUG logs
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
+logging.getLogger("autogen").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
 
 _real_create = openai.ChatCompletion.create
 
@@ -34,7 +40,9 @@ def logging_create(*args, **kwargs):
         )
     else:
         first_msg = ""
-    print(f"[LOG] OpenAI API call: model={model}, first_message={first_msg[:100]!r}")
+    print(
+        f"🤖 API Call: {model} - {first_msg[:80]}{'...' if len(first_msg) > 80 else ''}"
+    )
     return _real_create(*args, **kwargs)
 
 
@@ -64,11 +72,12 @@ class WebSearchAgent(autogen.AssistantAgent):
     def web_search(self, query: str) -> List[str]:
         """Perform web search using DuckDuckGo."""
         try:
+            print(f"🔍 Web Search: {query}")
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=5))
                 return [result["body"] for result in results]
         except Exception as e:
-            print(f"Web search error: {e}")
+            print(f"❌ Web search error: {e}")
             return []
 
     def generate_reply(self, messages=None, sender=None, config=None):
@@ -81,23 +90,21 @@ class WebSearchAgent(autogen.AssistantAgent):
             search_results = []
             if self.name == "MarketResearcher":
                 query = f"market trends and analysis for {self.business_idea}"
-                print(f"[DEBUG] MarketResearcher performing web search: {query}")
                 search_results = self.web_search(query)
             elif self.name == "CompetitorScout":
                 query = f"top competitors and alternatives for {self.business_idea}"
-                print(f"[DEBUG] CompetitorScout performing web search: {query}")
                 search_results = self.web_search(query)
 
             # Add search results to the context if available
             if search_results:
-                print(f"[DEBUG] Found {len(search_results)} web search results")
+                print(f"📊 Found {len(search_results)} search results")
                 search_context = "\n\nWEB SEARCH RESULTS:\n" + "\n".join(
                     search_results[:3]
                 )
                 # Modify the last message to include search results
                 messages[-1]["content"] = last_message + search_context
             else:
-                print(f"[DEBUG] No web search results found for {self.name}")
+                print(f"⚠️  No web search results found for {self.name}")
 
         # Call the parent method to generate the reply
         return super().generate_reply(messages=messages, sender=sender, config=config)
@@ -267,7 +274,7 @@ IMPORTANT: After providing your analysis, end your response with "TERMINATE" on 
 
     def validate_business_idea(self, business_idea: str) -> str:
         """Main method to validate a business idea using the multi-agent system."""
-        print(f"Starting business validation for: {business_idea}")
+        print(f"🚀 Starting business validation for: {business_idea}")
         print("=" * 60)
         self.business_idea = business_idea
         self.agents = self._create_agents()
@@ -284,6 +291,29 @@ IMPORTANT: After providing your analysis, end your response with "TERMINATE" on 
             groupchat=groupchat, llm_config={"config_list": self.config_list}
         )
 
+        # Custom message handler to show agent responses clearly
+        def message_handler(sender, message):
+            print(f"\n📝 {sender.name}:")
+            print("-" * 40)
+            # Show first 200 characters of response
+            content = message.get("content", "")
+            preview = content[:200] + "..." if len(content) > 200 else content
+            print(preview)
+            if len(content) > 200:
+                print("... (response continues)")
+            print("-" * 40)
+
+        # Add message handler to track responses
+        original_send = manager.send
+
+        def send_with_logging(message, recipient, request_reply, silent):
+            result = original_send(message, recipient, request_reply, silent)
+            if not silent:
+                message_handler(recipient, message)
+            return result
+
+        manager.send = send_with_logging
+
         # Start the validation process
         initial_message = f"""
 Please validate this business idea: "{business_idea}"
@@ -298,9 +328,11 @@ Here's the workflow:
 Each agent should build upon the previous agent's work. The MarketResearcher and CompetitorScout agents will perform real web searches to get current information.
 """
 
+        print("🤖 Starting multi-agent conversation...")
         # Start the conversation
         self.user_proxy.initiate_chat(manager, message=initial_message)
 
+        print("\n📋 Generating final report...")
         # Extract the final report
         final_report = self._generate_final_report(business_idea, groupchat.messages)
         return final_report
@@ -398,7 +430,7 @@ Based on the analysis above, consider the following next steps:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(report)
 
-        print(f"Report saved to: {filename}")
+        print(f"💾 Report saved to: {filename}")
         return filename
 
 
@@ -408,11 +440,15 @@ def main():
     print("=" * 40)
 
     # Get business idea from user
-    business_idea = input("Enter your business idea: ")
+    business_idea = input("💡 Enter your business idea: ")
 
     if not business_idea.strip():
-        print("Please provide a business idea to validate.")
+        print("❌ Please provide a business idea to validate.")
         return
+
+    print("\n" + "=" * 60)
+    print("🔄 Starting validation process...")
+    print("=" * 60)
 
     # Create validator and run analysis
     validator = BusinessValidatorAgent()
