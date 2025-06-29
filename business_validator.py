@@ -45,7 +45,12 @@ class WebSearchAgent(autogen.AssistantAgent):
     """Custom agent that can perform web searches."""
 
     def __init__(
-        self, name: str, system_message: str, config_list: List[Dict], **kwargs
+        self,
+        name: str,
+        system_message: str,
+        config_list: List[Dict],
+        business_idea: str,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -54,6 +59,7 @@ class WebSearchAgent(autogen.AssistantAgent):
             **kwargs,
         )
         self.config_list = config_list
+        self.business_idea = business_idea
 
     def web_search(self, query: str) -> List[str]:
         """Perform web search using DuckDuckGo."""
@@ -74,15 +80,13 @@ class WebSearchAgent(autogen.AssistantAgent):
             # Perform web search if the agent is supposed to do research
             search_results = []
             if self.name == "MarketResearcher":
-                print(f"[DEBUG] MarketResearcher performing web search...")
-                search_results = self.web_search(
-                    "coffee shop market trends 2024 location analysis AI tools"
-                )
+                query = f"market trends and analysis for {self.business_idea}"
+                print(f"[DEBUG] MarketResearcher performing web search: {query}")
+                search_results = self.web_search(query)
             elif self.name == "CompetitorScout":
-                print(f"[DEBUG] CompetitorScout performing web search...")
-                search_results = self.web_search(
-                    "AI tools for business location analysis coffee shops competitors"
-                )
+                query = f"top competitors and alternatives for {self.business_idea}"
+                print(f"[DEBUG] CompetitorScout performing web search: {query}")
+                search_results = self.web_search(query)
 
             # Add search results to the context if available
             if search_results:
@@ -103,8 +107,9 @@ class BusinessValidatorAgent:
     def __init__(self):
         """Initialize the Business Validator Agent system."""
         self.config_list = self._get_config_list()
-        self.agents = self._create_agents()
-        self.user_proxy = self._create_user_proxy()
+        self.business_idea = None
+        self.agents = None
+        self.user_proxy = None
 
     def _get_config_list(self) -> List[Dict[str, Any]]:
         """Get the configuration for the LLM."""
@@ -169,6 +174,7 @@ Always respond with:
 - MARKET RISKS: [Potential market challenges]
 - WEB SEARCH SOURCES: [List or summarize the web search results you used]""",
             config_list=self.config_list,
+            business_idea=self.business_idea,
         )
 
         # SWOT Analyst - Performs SWOT analysis
@@ -210,6 +216,7 @@ Always respond with:
 - COMPETITIVE THREATS: [What to watch out for]
 - WEB SEARCH SOURCES: [List or summarize the web search results you used]""",
             config_list=self.config_list,
+            business_idea=self.business_idea,
         )
 
         # Feedback Agent - Provides improvement suggestions
@@ -262,6 +269,9 @@ IMPORTANT: After providing your analysis, end your response with "TERMINATE" on 
         """Main method to validate a business idea using the multi-agent system."""
         print(f"Starting business validation for: {business_idea}")
         print("=" * 60)
+        self.business_idea = business_idea
+        self.agents = self._create_agents()
+        self.user_proxy = self._create_user_proxy()
 
         # Initialize the workflow
         groupchat = autogen.GroupChat(
